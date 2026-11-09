@@ -1,11 +1,16 @@
 name: Build e release
 
 # Crea il pacchetto .pkg per Mac.
-# - Push di un tag "v0.2.0"  -> costruisce e pubblica la release (l'app la trova e si aggiorna)
-# - Avvio manuale            -> costruisce soltanto, il .pkg si scarica dagli artifact
+# - Push su main con una versione nuova in blackmix/__init__.py
+#   (o push di un tag "v0.2.0")  -> costruisce e pubblica la release;
+#   le app installate la trovano e propongono l'aggiornamento
+# - Push su main con versione gia' pubblicata -> non fa nulla
+# - Avvio manuale -> costruisce soltanto, il .pkg si scarica dagli artifact
 on:
   push:
+    branches: [main]
     tags: ["v*"]
+    paths-ignore: ["README.md", "**/*.md"]
   workflow_dispatch:
 
 permissions:
@@ -18,45 +23,62 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Versione
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
+          V="$(sed -n 's/^__version__ = "\(.*\)"/\1/p' blackmix/__init__.py)"
+          PUBLISH=false
+          SKIP=false
           if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
-            V="${GITHUB_REF_NAME#v}"
+            V="${GITHUB_REF_NAME#v}"; PUBLISH=true
+          elif [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
+            if gh release view "v$V" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              echo "La versione $V e' gia' pubblicata: niente da fare."
+              SKIP=true
+            else
+              PUBLISH=true
+            fi
           else
-            V="$(sed -n 's/^__version__ = "\(.*\)"/\1/p' blackmix/__init__.py)-dev.${GITHUB_RUN_NUMBER}"
+            V="$V-dev.${GITHUB_RUN_NUMBER}"
           fi
-          echo "VERSION=$V" >> "$GITHUB_ENV"
-          echo "Versione: $V"
+          { echo "VERSION=$V"; echo "PUBLISH=$PUBLISH"; echo "SKIP=$SKIP"; } >> "$GITHUB_ENV"
+          echo "Versione: $V  pubblica: $PUBLISH"
 
       - name: Installa uv
+        if: env.SKIP != 'true'
         run: |
           curl -LsSf https://astral.sh/uv/install.sh | sh
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Costruisci app e pacchetto
+        if: env.SKIP != 'true'
         run: bash packaging/build_pkg.sh "$VERSION"
 
       - name: Prova un mix con l'app costruita
+        if: env.SKIP != 'true'
         run: |
-          APP=build/root/BlackMix.app/Contents
+          APP="$GITHUB_WORKSPACE/build/root/BlackMix.app/Contents"
           export PYTHONPATH="$APP/Resources/app"
           mkdir -p /tmp/prova && cd /tmp/prova
-          "$GITHUB_WORKSPACE/$APP/Resources/python/bin/python3" "$GITHUB_WORKSPACE/strumenti/crea_progetto_prova.py"
-          "$GITHUB_WORKSPACE/$APP/Resources/python/bin/python3" -m blackmix.cli "Canzone Prova.logicx" -o /tmp/prova/mix.wav
+          "$APP/Resources/python/bin/python3" "$GITHUB_WORKSPACE/strumenti/crea_progetto_prova.py"
+          "$APP/Resources/python/bin/python3" -m blackmix.cli "Canzone Prova.logicx" -o /tmp/prova/mix.wav
           test -s /tmp/prova/mix.wav
 
       - uses: actions/upload-artifact@v4
+        if: env.SKIP != 'true'
         with:
           name: BlackMix-${{ env.VERSION }}
           path: build/*.pkg
 
       - name: Pubblica la release
-        if: github.ref_type == 'tag'
+        if: env.PUBLISH == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" build/*.pkg --clobber
+          TAG="v$VERSION"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" build/*.pkg --clobber
           else
-            gh release create "$GITHUB_REF_NAME" build/*.pkg \
+            gh release create "$TAG" build/*.pkg --target "$GITHUB_SHA" \
               --title "BlackMix $VERSION" --generate-notes
           fi

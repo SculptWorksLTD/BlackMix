@@ -25,10 +25,11 @@ si può fare anche a mano con il pulsante **Aggiornamenti**.
 ### Pubblicare una nuova versione
 
 1. Aggiorna `__version__` in `blackmix/__init__.py` (es. `0.2.0`).
-2. Fai commit e crea il tag: `git tag v0.2.0 && git push origin main v0.2.0`.
-3. GitHub Actions costruisce l'app su un Mac, la prova con un mix di test e
-   pubblica la release con il `.pkg`. Da quel momento le app installate
-   propongono l'aggiornamento.
+2. Fai commit e push su `main`.
+3. GitHub Actions vede che la versione `v0.2.0` non esiste ancora, costruisce
+   l'app su un Mac, la prova con un mix di test e pubblica la release con il
+   `.pkg` (crea anche il tag). Da quel momento le app installate propongono
+   l'aggiornamento. I push che non cambiano versione non pubblicano nulla.
 
 Il workflow si può anche avviare a mano da **Actions > Build e release > Run
 workflow**: in quel caso costruisce il `.pkg` senza pubblicarlo (si scarica
