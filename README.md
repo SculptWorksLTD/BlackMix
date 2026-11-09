@@ -7,8 +7,10 @@ pronto da ascoltare, con un report delle scelte fatte.
 
 ## Installazione
 
-1. Scarica l'ultimo `BlackMix-x.y.z-arm64.pkg` dalla pagina
-   [Releases](https://github.com/SculptWorksLTD/BlackMix/releases).
+1. Scarica l'ultimo pacchetto dalla pagina
+   [Releases](https://github.com/SculptWorksLTD/BlackMix/releases):
+   - `BlackMix-x.y.z-arm64.pkg` per i Mac Apple Silicon (M1, M2…), macOS 11 o successivo
+   - `BlackMix-x.y.z-x86_64.pkg` per i Mac Intel, da **macOS 10.15 Catalina** in poi
 2. Aprilo e segui l'Installer: BlackMix finisce in **Applicazioni**.
    Non serve installare Python: è tutto dentro l'app.
 
@@ -108,6 +110,7 @@ packaging/
   build_pkg.sh  costruisce BlackMix.app e il .pkg (su macOS)
   Info.plist    modello per l'app
   make_icon.py  genera l'icona BlackMix.icns
+  check_minos.py verifica che ogni binario dell'app giri sul macOS minimo
 .github/workflows/release.yml   build automatica e release
 strumenti/
   crea_progetto_prova.py   genera un finto progetto Logic per le prove

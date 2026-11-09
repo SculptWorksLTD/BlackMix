@@ -6,6 +6,12 @@ set -euo pipefail
 VERSION="${1:?Uso: build_pkg.sh VERSIONE}"
 PY_VER="${PY_VER:-3.12}"
 ARCH="$(uname -m)"                 # arm64 / x86_64
+# macOS minimo: Intel fino a Catalina 10.15, Apple Silicon da Big Sur 11
+if [ "$ARCH" = "x86_64" ]; then
+  MIN_MACOS="${MIN_MACOS:-10.15}"; PBS_ARCH="x86_64"
+else
+  MIN_MACOS="${MIN_MACOS:-11.0}"; PBS_ARCH="aarch64"
+fi
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BUILD="$ROOT/build"
 APP="$BUILD/root/BlackMix.app"
@@ -16,9 +22,9 @@ command -v uv >/dev/null || { echo "Serve uv: curl -LsSf https://astral.sh/uv/in
 rm -rf "$BUILD"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/app" "$BUILD/scripts"
 
-echo "==> Python $PY_VER autonomo"
-uv python install "$PY_VER"
-PYHOME="$(ls -d "$(uv python dir)"/cpython-"$PY_VER"*-macos-* | grep -v freethreaded | head -1)"
+echo "==> Python $PY_VER autonomo ($ARCH, macOS $MIN_MACOS o successivo)"
+uv python install "cpython-$PY_VER-macos-$PBS_ARCH-none"
+PYHOME="$(ls -d "$(uv python dir)"/cpython-"$PY_VER"*-macos-"$PBS_ARCH"-* | grep -v freethreaded | head -1)"
 [ -d "$PYHOME" ] || { echo "Python gestito da uv non trovato"; exit 1; }
 # uv crea anche collegamenti simbolici "cpython-3.12-..." -> cartella vera: va risolto
 PYHOME="$(cd "$PYHOME" && pwd -P)"
@@ -33,7 +39,12 @@ PY="$APP/Contents/Resources/python/bin/python3"
 rm -f "$APP"/Contents/Resources/python/lib/python3*/EXTERNALLY-MANAGED
 
 echo "==> Librerie"
-uv pip install --python "$PY" -r "$ROOT/requirements.txt" certifi
+# solo pacchetti precompilati compatibili con il macOS minimo scelto:
+# uv scarta le versioni di numpy/scipy che richiedono un macOS piu' recente
+MACOSX_DEPLOYMENT_TARGET="$MIN_MACOS" uv pip install --python "$PY" \
+  --python-platform "$PBS_ARCH-apple-darwin" --only-binary :all: \
+  -r "$ROOT/requirements.txt" certifi
+"$PY" -c "import numpy, scipy; print('numpy', numpy.__version__, '- scipy', scipy.__version__)"
 # un po' di dimagrimento
 rm -rf "$APP"/Contents/Resources/python/lib/python3*/test \
        "$APP"/Contents/Resources/python/lib/python3*/idlelib \
@@ -55,7 +66,7 @@ exec "$C/Resources/python/bin/python3" -m blackmix "$@"
 EOF
 chmod +x "$APP/Contents/MacOS/BlackMix"
 
-sed -e "s/@VERSION@/$VERSION/g" -e "s/@ID@/$ID/g" "$ROOT/packaging/Info.plist" > "$APP/Contents/Info.plist"
+sed -e "s/@VERSION@/$VERSION/g" -e "s/@ID@/$ID/g" -e "s/@MINOS@/$MIN_MACOS/g" "$ROOT/packaging/Info.plist" > "$APP/Contents/Info.plist"
 if [ -f "$ROOT/packaging/BlackMix.icns" ]; then
   cp "$ROOT/packaging/BlackMix.icns" "$APP/Contents/Resources/"
 fi
@@ -77,6 +88,9 @@ print('Tcl/Tk', tkinter.Tcl().eval('info patchlevel'))
 import blackmix, blackmix.mixer, blackmix.updater
 print('BlackMix', blackmix.__version__)
 "
+
+echo "==> Controllo compatibilita' con macOS $MIN_MACOS"
+python3 "$ROOT/packaging/check_minos.py" "$APP" "$MIN_MACOS"
 
 echo "==> Firma ad-hoc"
 codesign --force --deep --sign - "$APP" || echo "(firma ad-hoc non riuscita, continuo)"
@@ -102,8 +116,8 @@ pkgbuild --root "$BUILD/root" --component-plist "$BUILD/component.plist" \
 
 productbuild --synthesize --package "$BUILD/BlackMix-component.pkg" "$BUILD/distribution.xml"
 # titolo e architettura nel programma di installazione
-TITLE="$VERSION" HOSTARCH="$ARCH" perl -0pi -e \
-  's|(<installer-gui-script[^>]*>)|$1\n    <title>BlackMix $ENV{TITLE}</title>\n    <options hostArchitectures="$ENV{HOSTARCH}"/>|' \
+TITLE="$VERSION" HOSTARCH="$ARCH" MINOS="$MIN_MACOS" perl -0pi -e \
+  's|(<installer-gui-script[^>]*>)|$1\n    <title>BlackMix $ENV{TITLE}</title>\n    <options hostArchitectures="$ENV{HOSTARCH}"/>\n    <volume-check><allowed-os-versions><os-version min="$ENV{MINOS}"/></allowed-os-versions></volume-check>|' \
   "$BUILD/distribution.xml"
 OUT="$BUILD/BlackMix-$VERSION-$ARCH.pkg"
 productbuild --distribution "$BUILD/distribution.xml" --package-path "$BUILD" "$OUT"
