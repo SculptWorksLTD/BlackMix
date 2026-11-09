@@ -6,11 +6,11 @@ set -euo pipefail
 VERSION="${1:?Uso: build_pkg.sh VERSIONE}"
 PY_VER="${PY_VER:-3.12}"
 ARCH="$(uname -m)"                 # arm64 / x86_64
-# macOS minimo: Intel fino a Catalina 10.15, Apple Silicon da Big Sur 11
+# macOS minimo: Intel da Catalina 10.15, Apple Silicon da Monterey 12 (scipy arm64 non esiste per 11)
 if [ "$ARCH" = "x86_64" ]; then
   MIN_MACOS="${MIN_MACOS:-10.15}"; PBS_ARCH="x86_64"
 else
-  MIN_MACOS="${MIN_MACOS:-11.0}"; PBS_ARCH="aarch64"
+  MIN_MACOS="${MIN_MACOS:-12.0}"; PBS_ARCH="aarch64"
 fi
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BUILD="$ROOT/build"

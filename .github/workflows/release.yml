@@ -1,7 +1,7 @@
 name: Build e release
 
 # Crea i pacchetti .pkg per Mac:
-#   arm64  (Apple Silicon, macOS 11 o successivo)
+#   arm64  (Apple Silicon, macOS 12 o successivo)
 #   x86_64 (Intel, macOS 10.15 Catalina o successivo)
 # - Push su main con una versione nuova in blackmix/__init__.py
 #   (o push di un tag "v0.2.0")  -> costruisce e pubblica la release;
@@ -110,6 +110,6 @@ jobs:
             gh release create "$TAG" dist/*.pkg --target "$GITHUB_SHA" -R "$GITHUB_REPOSITORY" \
               --title "BlackMix $VERSION" \
               --notes "Scarica il pacchetto giusto per il tuo Mac:
-          - **arm64**: Mac con Apple Silicon (M1, M2, M3…), macOS 11 o successivo
+          - **arm64**: Mac con Apple Silicon (M1, M2, M3…), macOS 12 o successivo
           - **x86_64**: Mac con processore Intel, macOS 10.15 Catalina o successivo"
           fi
