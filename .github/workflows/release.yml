@@ -1,0 +1,62 @@
+name: Build e release
+
+# Crea il pacchetto .pkg per Mac.
+# - Push di un tag "v0.2.0"  -> costruisce e pubblica la release (l'app la trova e si aggiorna)
+# - Avvio manuale            -> costruisce soltanto, il .pkg si scarica dagli artifact
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  macos:
+    runs-on: macos-latest   # Apple Silicon (arm64)
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Versione
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            V="${GITHUB_REF_NAME#v}"
+          else
+            V="$(sed -n 's/^__version__ = "\(.*\)"/\1/p' blackmix/__init__.py)-dev.${GITHUB_RUN_NUMBER}"
+          fi
+          echo "VERSION=$V" >> "$GITHUB_ENV"
+          echo "Versione: $V"
+
+      - name: Installa uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Costruisci app e pacchetto
+        run: bash packaging/build_pkg.sh "$VERSION"
+
+      - name: Prova un mix con l'app costruita
+        run: |
+          APP=build/root/BlackMix.app/Contents
+          export PYTHONPATH="$APP/Resources/app"
+          mkdir -p /tmp/prova && cd /tmp/prova
+          "$GITHUB_WORKSPACE/$APP/Resources/python/bin/python3" "$GITHUB_WORKSPACE/strumenti/crea_progetto_prova.py"
+          "$GITHUB_WORKSPACE/$APP/Resources/python/bin/python3" -m blackmix.cli "Canzone Prova.logicx" -o /tmp/prova/mix.wav
+          test -s /tmp/prova/mix.wav
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BlackMix-${{ env.VERSION }}
+          path: build/*.pkg
+
+      - name: Pubblica la release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" build/*.pkg --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" build/*.pkg \
+              --title "BlackMix $VERSION" --generate-notes
+          fi
