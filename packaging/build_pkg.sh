@@ -20,7 +20,15 @@ echo "==> Python $PY_VER autonomo"
 uv python install "$PY_VER"
 PYHOME="$(ls -d "$(uv python dir)"/cpython-"$PY_VER"*-macos-* | grep -v freethreaded | head -1)"
 [ -d "$PYHOME" ] || { echo "Python gestito da uv non trovato"; exit 1; }
-cp -R "$PYHOME" "$APP/Contents/Resources/python"
+# uv crea anche collegamenti simbolici "cpython-3.12-..." -> cartella vera: va risolto
+PYHOME="$(cd "$PYHOME" && pwd -P)"
+cp -R "$PYHOME/" "$APP/Contents/Resources/python"
+[ -L "$APP/Contents/Resources/python" ] && { echo "Python copiato come collegamento"; exit 1; }
+# nessun collegamento deve puntare fuori dall'app
+if find "$APP/Contents/Resources/python" -type l -exec readlink {} \; | grep -q '^/'; then
+  echo "Collegamenti assoluti dentro Python:"; find "$APP/Contents/Resources/python" -type l -exec sh -c 'case "$(readlink "$1")" in /*) echo "$1 -> $(readlink "$1")";; esac' _ {} \;
+  exit 1
+fi
 PY="$APP/Contents/Resources/python/bin/python3"
 rm -f "$APP"/Contents/Resources/python/lib/python3*/EXTERNALLY-MANAGED
 
@@ -53,6 +61,16 @@ if [ -f "$ROOT/packaging/BlackMix.icns" ]; then
 fi
 
 echo "==> Prova del pacchetto"
+du -sh "$APP"
+SIZE_MB=$(du -sm "$APP" | cut -f1)
+[ "$SIZE_MB" -gt 40 ] || { echo "App troppo piccola ($SIZE_MB MB): manca qualcosa"; exit 1; }
+# prova con l'app spostata altrove, per essere sicuri che non dipenda dal percorso di build
+MOVED="$(mktemp -d)/BlackMix.app"
+cp -R "$APP" "$MOVED"
+mv "$(uv python dir)" "$(uv python dir).nascosto"
+trap 'mv "$(uv python dir).nascosto" "$(uv python dir)" 2>/dev/null || true' EXIT
+PYTHONPATH="$MOVED/Contents/Resources/app" "$MOVED/Contents/Resources/python/bin/python3" -c "import numpy, scipy, tkinter; print('ok fuori posto')"
+rm -rf "$(dirname "$MOVED")"
 PYTHONPATH="$APP/Contents/Resources/app" "$PY" -c "
 import numpy, scipy, certifi, tkinter
 print('Tcl/Tk', tkinter.Tcl().eval('info patchlevel'))
@@ -91,4 +109,6 @@ OUT="$BUILD/BlackMix-$VERSION-$ARCH.pkg"
 productbuild --distribution "$BUILD/distribution.xml" --package-path "$BUILD" "$OUT"
 rm -f "$BUILD/BlackMix-component.pkg"
 ls -lh "$OUT"
+PKG_MB=$(du -sm "$OUT" | cut -f1)
+[ "$PKG_MB" -gt 15 ] || { echo "Pacchetto troppo piccolo ($PKG_MB MB)"; exit 1; }
 echo "PKG=$OUT"
